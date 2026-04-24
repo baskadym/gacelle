@@ -60,8 +60,8 @@ pars0.(modelParams{2}) = double(R2init);
 % Fitting options
 fitting                     = [];
 fitting.modelParams         = modelParams;
-fitting.lb                  = [0,   0];    % lower bound  [S0, R2*]
-fitting.ub                  = [Inf, 500];  % upper bound  [S0, R2*] (s^-1)
+fitting.lb                  = [0,   0];                          % lower bound  [S0, R2*]
+fitting.ub                  = [max(y(mask>0))*2, 500];           % upper bound  [S0, R2*] (s^-1); must be finite: Inf breaks internal [0,1] normalisation
 fitting.iteration           = 4000;
 fitting.initialLearnRate    = 0.001;
 fitting.lossFunction        = 'l1';
