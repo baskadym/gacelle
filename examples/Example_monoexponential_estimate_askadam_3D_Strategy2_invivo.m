@@ -1,45 +1,53 @@
-addpath(genpath('../../gacelle/'))
+addpath(genpath('/myriadfs/home/rmapkdy/Scratch/gacelle'))
 clear
 
-%% Load in vivo multi-echo data
-% Directory containing multi-echo NIfTI files (one .nii/.nii.gz file per echo,
-% sorted alphabetically so that the sort order matches echo order)
-data_dir = '/myriadfs/home/rmapkdy/Scratch/input/20220504.M700350/MORSE_v15.8/pdw_scan1/mag/';
+%% Load in vivo MRI data using NIfTI files
+% Expected inputs:
+%   - one NIfTI file per echo time, e.g. echo1.nii, echo2.nii, ...
+%   - one NIfTI mask file, e.g. mask.nii
+%
+% Edit the paths and echo times below to match your data.
 
-% Load all NIfTI files from the directory
-nii_files = dir(fullfile(data_dir, '*.nii*'));
-[~, sort_idx] = sort({nii_files.name});
-nii_files = nii_files(sort_idx);
+% Echo times in seconds (edit to match your acquisition)
+t = [2.3:2.38:14.2]*1e-3;
 
-% Stack echoes into a 4-D array: [Nx, Ny, Nz, Necho]
-y = [];
-for kecho = 1:numel(nii_files)
-    echo_data = niftiread(fullfile(nii_files(kecho).folder, nii_files(kecho).name));
-    y = cat(4, y, single(echo_data));
+% Paths to NIfTI files for each echo (one file per echo time)
+echoFiles = dir('/myriadfs/home/rmapkdy/Scratch/input/20220504.M700350/MORSE_v15.8/pdw_scan1/mag/mag*');
+
+% Validate that echo time and file counts match
+assert(numel(t) == numel(echoFiles), ...
+    'Number of echo times must match number of echo NIfTI files.');
+
+% Load echo volumes and stack into a 4D array [Nx, Ny, Nz, Nechoes]
+vol1 = niftiread(fullfile(echoFiles(1).folder, echoFiles(1).name));
+[Nx, Ny, Nz] = size(vol1);
+Nechoes = numel(echoFiles);
+y = zeros(Nx, Ny, Nz, Nechoes, 'single');
+y(:,:,:,1) = single(vol1);
+for k = 2:Nechoes
+    y(:,:,:,k) = single(niftiread(fullfile(echoFiles(k).folder, echoFiles(k).name)));
 end
-
-% Echo times in seconds -- update to match your acquisition
-% e.g. t = linspace(2.1e-3, 32.0e-3, numel(nii_files));
-t = [];   % <-- REQUIRED: fill in echo times before running this script
-assert(~isempty(t), 'Echo times ''t'' must be specified before running this script.');
-
-% Brain mask: keep voxels above 10 % of the maximum signal in the first echo
-mask = y(:,:,:,1) > 0.1 * max(y(:,:,:,1), [], 'all');
-
+mask = niftiread(fullfile(echoFiles(k).folder, 'mask.nii') );
+mask(isinf(mask))=0;
 %% Set up fitting algorithm
 modelParams = {'S0','R2star'};
 
-[Nx, Ny, Nz] = deal(size(y,1), size(y,2), size(y,3));
+% Starting point: initialise from a simple ratio of first/last echo for R2*
+% and the first echo amplitude for S0
+S0init     = y(:,:,:,1);
+% guard against log of zero or negative values
+ratio      = y(:,:,:,end) ./ max(y(:,:,:,1), eps('single'));
+dt         = t(end) - t(1);
+R2init     = max(-log(max(ratio, eps('single'))) / dt, 0);
 
-% Starting points
-pars0.(modelParams{1}) = ones(Nx, Ny, Nz);          % S0
-pars0.(modelParams{2}) = 30 * ones(Nx, Ny, Nz);     % R2* (s^-1)
+pars0.(modelParams{1}) = double(S0init);
+pars0.(modelParams{2}) = double(R2init);
 
 % Fitting options
 fitting                     = [];
-fitting.modelParams         = {'S0','R2star'};
-fitting.lb                  = [0,   0  ];   % lower bounds
-fitting.ub                  = [4, 200  ];   % upper bounds
+fitting.modelParams         = modelParams;
+fitting.lb                  = [0,   0];    % lower bound  [S0, R2*]
+fitting.ub                  = [2*max(S0init(:)), 500];  % upper bound  [S0, R2*] (s^-1)
 fitting.iteration           = 4000;
 fitting.initialLearnRate    = 0.001;
 fitting.lossFunction        = 'l1';
@@ -49,17 +57,22 @@ fitting.convergenceWindow   = 20;
 fitting.isDisplay           = false;
 fitting.isOptimiseMemory    = true;
 
-% Forward model handle (monoexponential decay, Strategy 2)
+% Forward model (same as the synthetic example)
 modelFWD = @Example_monoexponential_FWD_askadam_3D_Strategy2;
 
-% Equal weights
+% Equal weights across echoes
 weights = [];
 
 %% Run optimisation
 askadam_obj = askadam;
-out         = askadam_obj.optimisation(y, mask, weights, pars0, fitting, modelFWD, t, mask);
+out = askadam_obj.optimisation(y, mask, weights, pars0, fitting, modelFWD, t, mask);
 
 %% Display results
-figure; tiledlayout(1,2)
-nexttile; imshow(out.final.S0(:,:,round(Nz/2)),     []);  title('S0 Fitted')
-nexttile; imshow(out.final.R2star(:,:,round(Nz/2)), []);  title('R2* Fitted (s^{-1})')
+% Choose a representative slice for 2-D display
+sliceIdx = round(Nz / 2);
+
+figure; tiledlayout(1,2);
+nexttile; imshow(out.final.S0(:,:,sliceIdx)  .* mask(:,:,sliceIdx)); title('S0 Fitted');   colorbar;
+nexttile; imshow(out.final.R2star(:,:,sliceIdx) .* mask(:,:,sliceIdx)); title('R2* Fitted (s^{-1})'); colorbar;
+save( '/home/rmapkdy/Scratch/output/fitted_para.mat', 'out')
+saveas(gcf, '/home/rmapkdy/Scratch/output/gacelle_test_invivo.png')
