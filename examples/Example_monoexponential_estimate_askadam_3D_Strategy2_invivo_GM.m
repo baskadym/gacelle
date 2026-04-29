@@ -1,67 +1,79 @@
 addpath(genpath('/myriadfs/home/rmapkdy/Scratch/gacelle'))
 clear
 
-%% Load two sets of multi-echo in vivo MRI data using NIfTI files
+%% Load N sets of multi-echo in vivo MRI data using NIfTI files
 % Expected inputs:
 %   - one NIfTI file per echo time for each scan, e.g. mag001.nii, mag002.nii, ...
-%   - one NIfTI mask file, e.g. mask.nii
-%   - two flip angles, one per scan
+%   - one NIfTI mask file in the first scan directory, e.g. mask.nii
+%   - one flip angle per scan (any number of scans >= 2 supported)
 %
-% The two scans may have different numbers of echoes.
+% Each scan may have a different number of echoes.
 % Edit the paths, echo times and flip angles below to match your data.
 
 % Flip angles in degrees (one per scan)
-alpha_values = [6, 24];
+alpha_values = [6, 9, 26];
 
-% Echo times in seconds for each scan (edit to match your acquisition)
-t1 = [2.3:2.38:14.2]*1e-3;   % scan 1 (PDW, alpha = 6 deg)
-t2 = [2.3:2.38:14.2]*1e-3;   % scan 2 (T1W, alpha = 24 deg)
+% Echo times in seconds for each scan (one row / cell entry per scan)
+% Edit to match your acquisition; scans may have different numbers of echoes.
+echo_times{1} = [2.3:2.38:14.2]*1e-3;   % scan 1 (alpha = 6 deg)
+echo_times{2} = [2.3:2.38:14.2]*1e-3;   % scan 2 (alpha = 9 deg)
+echo_times{3} = [2.3:2.38:14.2]*1e-3;   % scan 3 (alpha = 26 deg)
 
-% NIfTI file lists for each scan (one file per echo time)
-echoFiles1 = dir('/myriadfs/home/rmapkdy/Scratch/input/20220504.M700350/MORSE_v15.8/pdw_scan1/mag/mag*');
-echoFiles2 = dir('/myriadfs/home/rmapkdy/Scratch/input/20220504.M700350/MORSE_v15.8/t1w_scan1/mag/mag*');
+% Directories containing NIfTI echo files for each scan
+scan_dirs{1} = '/myriadfs/home/rmapkdy/Scratch/input/t1w_mfc_3dflash_v3i_6deg_180us_0012';
+scan_dirs{2} = '/myriadfs/home/rmapkdy/Scratch/input/t1w_mfc_3dflash_v3i_9deg_180us_0011';
+scan_dirs{3} = '/myriadfs/home/rmapkdy/Scratch/input/t1w_mfc_3dflash_v3i_26deg_180us_0007';
 
-% Validate that echo time and file counts match for each scan
-assert(numel(t1) == numel(echoFiles1), ...
-    'Scan 1: number of echo times must match number of echo NIfTI files.');
-assert(numel(t2) == numel(echoFiles2), ...
-    'Scan 2: number of echo times must match number of echo NIfTI files.');
+%% Validate inputs
+Nscans = numel(alpha_values);
+assert(numel(echo_times) == Nscans, 'echo_times must have one entry per flip angle.');
+assert(numel(scan_dirs)  == Nscans, 'scan_dirs must have one entry per flip angle.');
+
+echoFiles = cell(1, Nscans);
+for s = 1:Nscans
+    echoFiles{s} = dir(fullfile(scan_dirs{s}, '*.nii'));
+    assert(numel(echo_times{s}) == numel(echoFiles{s}), ...
+        sprintf('Scan %d: number of echo times must match number of echo NIfTI files.', s));
+end
 
 %% Load echo volumes and stack into 4D arrays [Nx, Ny, Nz, Nechoes]
-vol1 = niftiread(fullfile(echoFiles1(1).folder, echoFiles1(1).name));
+% Determine spatial dimensions from the first echo of the first scan
+vol1 = niftiread(fullfile(echoFiles{1}(1).folder, echoFiles{1}(1).name));
 [Nx, Ny, Nz] = size(vol1);
 
-Nechoes1 = numel(echoFiles1);
-y1 = zeros(Nx, Ny, Nz, Nechoes1, 'single');
-y1(:,:,:,1) = single(vol1);
-for k = 2:Nechoes1
-    y1(:,:,:,k) = single(niftiread(fullfile(echoFiles1(k).folder, echoFiles1(k).name)));
+y_scans = cell(1, Nscans);
+for s = 1:Nscans
+    Nechoes_s = numel(echoFiles{s});
+    y_s = zeros(Nx, Ny, Nz, Nechoes_s, 'single');
+    for k = 1:Nechoes_s
+        y_s(:,:,:,k) = single(niftiread(fullfile(echoFiles{s}(k).folder, echoFiles{s}(k).name)));
+    end
+    y_scans{s} = y_s;
 end
 
-Nechoes2 = numel(echoFiles2);
-y2 = zeros(Nx, Ny, Nz, Nechoes2, 'single');
-for k = 1:Nechoes2
-    y2(:,:,:,k) = single(niftiread(fullfile(echoFiles2(k).folder, echoFiles2(k).name)));
-end
-
-% Load brain mask (shared between the two scans; assumed to be co-registered)
-mask = niftiread(fullfile(echoFiles1(1).folder, 'mask.nii'));
+% Load brain mask (assumed to be co-registered; located in the first scan directory)
+mask = niftiread(fullfile(echoFiles{1}(1).folder, 'mask.nii'));
 mask(isinf(mask)) = 0;
 
-% Concatenate both scans along the echo (4th) dimension: [Nx, Ny, Nz, Nechoes1+Nechoes2]
-y = cat(4, y1, y2);
+% Concatenate all scans along the echo (4th) dimension
+y = cat(4, y_scans{:});
 
 % Build concatenated echo-time and flip-angle vectors (one entry per measurement)
-t     = [t1(:)', t2(:)'];
-alpha = [alpha_values(1)*ones(1, Nechoes1), alpha_values(2)*ones(1, Nechoes2)];
+t     = [];
+alpha = [];
+for s = 1:Nscans
+    t     = [t,     echo_times{s}(:)'];                              %#ok<AGROW>
+    alpha = [alpha, alpha_values(s)*ones(1, numel(echo_times{s}))];  %#ok<AGROW>
+end
 
 %% Set up fitting algorithm
 modelParams = {'S0', 'R2s_hat', 'dR2s_dalpha'};
 
-% Starting point: initialise S0 and R2s_hat from the PDW scan (scan 1)
+% Starting point: initialise S0 and R2s_hat from scan 1
+y1 = y_scans{1};
 S0init  = y1(:,:,:,1);
 ratio   = y1(:,:,:,end) ./ max(y1(:,:,:,1), eps('single'));
-dt      = t1(end) - t1(1);
+dt      = echo_times{1}(end) - echo_times{1}(1);
 R2init  = max(-log(max(ratio, eps('single'))) / dt, 0);
 
 pars0.S0          = double(S0init);
@@ -82,7 +94,7 @@ fitting.convergenceWindow   = 20;
 fitting.isDisplay           = false;
 fitting.isOptimiseMemory    = true;
 
-% Forward model for the two-flip-angle monoexponential decay
+% Forward model for multi-flip-angle monoexponential decay
 % S = S0 * exp(-t * (R2s_hat + dR2s_dalpha * alpha))
 modelFWD = @Example_monoexponential_FWD_askadam_3D_Strategy2_GM;
 
