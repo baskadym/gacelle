@@ -121,7 +121,7 @@ figure; tiledlayout(1,nDisplayMaps);
 for s = 1:Nscans
     nexttile;
     imshow(out.final.S0(:,:,sliceIdx,s) .* mask(:,:,sliceIdx));
-    title(sprintf('S0 Fitted (\\alpha=%g^\\circ)', alpha_values(s)));
+    title(sprintf('S0 Fitted (\alpha=%g^\circ)', alpha_values(s)));
     colorbar;
 end
 nexttile; imshow(out.final.R2s_hat(:,:,sliceIdx)     .* mask(:,:,sliceIdx)); title('R2s\_hat Fitted (s^{-1})'); colorbar;
