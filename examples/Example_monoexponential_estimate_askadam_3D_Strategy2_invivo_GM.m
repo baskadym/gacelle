@@ -58,20 +58,27 @@ mask(isinf(mask)) = 0;
 % Concatenate all scans along the echo (4th) dimension
 y = cat(4, y_scans{:});
 
-% Build concatenated echo-time and flip-angle vectors (one entry per measurement)
-t     = [];
-alpha = [];
+% Build concatenated echo-time, flip-angle and scan-index vectors
+% (one entry per measurement)
+t        = [];
+alpha    = [];
+scan_idx = [];
 for s = 1:Nscans
-    t     = [t,     echo_times{s}(:)'];                              %#ok<AGROW>
-    alpha = [alpha, alpha_values(s)*ones(1, numel(echo_times{s}))];  %#ok<AGROW>
+    t        = [t,        echo_times{s}(:)'];                               %#ok<AGROW>
+    alpha    = [alpha,    alpha_values(s)*ones(1, numel(echo_times{s}))];   %#ok<AGROW>
+    scan_idx = [scan_idx, s*ones(1, numel(echo_times{s}))];                 %#ok<AGROW>
 end
 
 %% Set up fitting algorithm
 modelParams = {'S0', 'R2s_hat', 'dR2s_dalpha'};
 
-% Starting point: initialise S0 and R2s_hat from scan 1
+% Starting point: initialise one S0 map per scan and the shared decay
+% parameters from scan 1
 y1 = y_scans{1};
-S0init  = y1(:,:,:,1);
+S0init  = zeros(Nx, Ny, Nz, Nscans, 'single');
+for s = 1:Nscans
+    S0init(:,:,:,s) = y_scans{s}(:,:,:,1);
+end
 ratio   = y1(:,:,:,end) ./ max(y1(:,:,:,1), eps('single'));
 dt      = echo_times{1}(end) - echo_times{1}(1);
 R2init  = max(-log(max(ratio, eps('single'))) / dt, 0);
@@ -95,7 +102,7 @@ fitting.isDisplay           = false;
 fitting.isOptimiseMemory    = true;
 
 % Forward model for multi-flip-angle monoexponential decay
-% S = S0 * exp(-t * (R2s_hat + dR2s_dalpha * alpha))
+% S = S0(scan) * exp(-t * (R2s_hat + dR2s_dalpha * alpha))
 modelFWD = @Example_monoexponential_FWD_askadam_3D_Strategy2_GM;
 
 % Equal weights across echoes
@@ -103,14 +110,20 @@ weights = [];
 
 %% Run optimisation
 askadam_obj = askadam;
-out = askadam_obj.optimisation(y, mask, weights, pars0, fitting, modelFWD, t, alpha, mask);
+out = askadam_obj.optimisation(y, mask, weights, pars0, fitting, modelFWD, t, alpha, scan_idx, mask);
 
 %% Display results
 % Choose a representative slice for 2-D display
 sliceIdx = round(Nz / 2);
+nDisplayMaps = size(pars0.S0, 4) + 2;
 
-figure; tiledlayout(1,3);
-nexttile; imshow(out.final.S0(:,:,sliceIdx)          .* mask(:,:,sliceIdx)); title('S0 Fitted');              colorbar;
+figure; tiledlayout(1,nDisplayMaps);
+for s = 1:Nscans
+    nexttile;
+    imshow(out.final.S0(:,:,sliceIdx,s) .* mask(:,:,sliceIdx));
+    title(sprintf('S0 Fitted (\alpha=%g^\circ)', alpha_values(s)));
+    colorbar;
+end
 nexttile; imshow(out.final.R2s_hat(:,:,sliceIdx)     .* mask(:,:,sliceIdx)); title('R2s\_hat Fitted (s^{-1})'); colorbar;
 nexttile; imshow(out.final.dR2s_dalpha(:,:,sliceIdx) .* mask(:,:,sliceIdx)); title('dR2s\_dalpha Fitted (s^{-1}/deg)'); colorbar;
 save( '/home/rmapkdy/Scratch/output/fitted_para_GM.mat', 'out')
