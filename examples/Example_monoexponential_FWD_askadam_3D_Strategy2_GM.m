@@ -45,9 +45,9 @@ assert(size(S0,4) == Nscans, 'pars.S0 must contain one map per scan.');
 % Forward signal with scan-specific S0 offsets and common decay parameters
 S = zeros([size(S0,1), size(S0,2), size(S0,3), numel(t)], 'like', S0);
 for s = 1:Nscans
-    idx = reshape(scan_idx == s, 1, []);
-    S0_s = S0(:,:,:,s);
-    S(:,:,:,idx) = S0_s .* exp( -t(:,:,:,idx) .* (R2s_hat + dR2s_dalpha .* alpha(:,:,:,idx)) );
+    is_scan_s = reshape(scan_idx == s, 1, []);
+    S0_for_scan = S0(:,:,:,s);
+    S(:,:,:,is_scan_s) = S0_for_scan .* exp( -t(:,:,:,is_scan_s) .* (R2s_hat + dR2s_dalpha .* alpha(:,:,:,is_scan_s)) );
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
