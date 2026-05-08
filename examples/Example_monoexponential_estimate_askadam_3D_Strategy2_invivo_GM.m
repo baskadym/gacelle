@@ -11,18 +11,25 @@ clear
 % Edit the paths, echo times and flip angles below to match your data.
 
 % Flip angles in degrees (one per scan)
-alpha_values = [6, 9, 26];
+alpha_values = [6, 9, 26, 31, 36, 42];
 
 % Echo times in seconds for each scan (one row / cell entry per scan)
 % Edit to match your acquisition; scans may have different numbers of echoes.
-echo_times{1} = [2.3:2.38:14.2]*1e-3;   % scan 1 (alpha = 6 deg)
-echo_times{2} = [2.3:2.38:14.2]*1e-3;   % scan 2 (alpha = 9 deg)
-echo_times{3} = [2.3:2.38:14.2]*1e-3;   % scan 3 (alpha = 26 deg)
+% echo_times{1} = [2.3:2.38:14.2]*1e-3;   % scan 1 (alpha = 6 deg)
+% echo_times{2} = [2.3:2.38:14.2]*1e-3;   % scan 2 (alpha = 9 deg)
+TE = [2.56:1.78:15.02]*1e-3;   
+echo_times = repmat({TE}, 1, 6);
+
+
 
 % Directories containing NIfTI echo files for each scan
-scan_dirs{1} = '/myriadfs/home/rmapkdy/Scratch/input/t1w_mfc_3dflash_v3i_6deg_180us_0012';
-scan_dirs{2} = '/myriadfs/home/rmapkdy/Scratch/input/t1w_mfc_3dflash_v3i_9deg_180us_0011';
-scan_dirs{3} = '/myriadfs/home/rmapkdy/Scratch/input/t1w_mfc_3dflash_v3i_26deg_180us_0007';
+scan_dirs{1} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_6deg_180us_0012';
+scan_dirs{2} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_9deg_180us_0011';
+scan_dirs{3} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_26deg_180us_0007';
+scan_dirs{4} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_31deg_180us_0006';
+scan_dirs{5} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_36deg_180us_0004';
+scan_dirs{6} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_42deg_180us_0005';
+mask_file = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/mask.nii';
 
 %% Validate inputs
 Nscans = numel(alpha_values);
@@ -52,7 +59,7 @@ for s = 1:Nscans
 end
 
 % Load brain mask (assumed to be co-registered; located in the first scan directory)
-mask = niftiread(fullfile(echoFiles{1}(1).folder, 'mask.nii'));
+mask = niftiread(mask_file);
 mask(isinf(mask)) = 0;
 
 % Concatenate all scans along the echo (4th) dimension
@@ -74,17 +81,25 @@ y1 = y_scans{1};
 S0init  = y1(:,:,:,1);
 ratio   = y1(:,:,:,end) ./ max(y1(:,:,:,1), eps('single'));
 dt      = echo_times{1}(end) - echo_times{1}(1);
-R2init  = max(-log(max(ratio, eps('single'))) / dt, 0);
+R2s_hat_init  = max(-log(max(ratio, eps('single'))) / dt, 0);
+
+%%%%% other initialization:
+    % coeffs = polyfit(echo_times{1}, log(y1), 1);
+    % 
+    % R2init = -coeffs(1);
+    % Soinit = coeffs(2);
+%%%%%%%
+
 
 pars0.S0          = double(S0init);
-pars0.R2s_hat     = double(R2init);
+pars0.R2s_hat     = double(R2s_hat_init);
 pars0.dR2s_dalpha = zeros(Nx, Ny, Nz);   % dR2*/dalpha (s^-1 / degree)
 
 % Fitting options
 fitting                     = [];
 fitting.modelParams         = modelParams;
 fitting.lb                  = [0,   0,   -5];   % lower bounds  [S0, R2s_hat, dR2s_dalpha]
-fitting.ub                  = [2*max(S0init(:)), 500, 5];  % upper bounds
+fitting.ub                  = [3*max(S0init(mask == 1)), 2*max(R2s_hat_init(mask==1)), 5];  % upper bounds
 fitting.iteration           = 4000;
 fitting.initialLearnRate    = 0.001;
 fitting.lossFunction        = 'l1';
@@ -105,13 +120,16 @@ weights = [];
 askadam_obj = askadam;
 out = askadam_obj.optimisation(y, mask, weights, pars0, fitting, modelFWD, t, alpha, mask);
 
+
+save( '/home/rmapkdy/Scratch/output/fitted_para_GM.mat', 'out')
+
 %% Display results
 % Choose a representative slice for 2-D display
 sliceIdx = round(Nz / 2);
 
 figure; tiledlayout(1,3);
-nexttile; imshow(out.final.S0(:,:,sliceIdx)          .* mask(:,:,sliceIdx)); title('S0 Fitted');              colorbar;
-nexttile; imshow(out.final.R2s_hat(:,:,sliceIdx)     .* mask(:,:,sliceIdx)); title('R2s\_hat Fitted (s^{-1})'); colorbar;
-nexttile; imshow(out.final.dR2s_dalpha(:,:,sliceIdx) .* mask(:,:,sliceIdx)); title('dR2s\_dalpha Fitted (s^{-1}/deg)'); colorbar;
-save( '/home/rmapkdy/Scratch/output/fitted_para_GM.mat', 'out')
+nexttile; imshow(single(out.final.S0(:,:,sliceIdx)).* single(mask(:,:,sliceIdx))); title('S0 Fitted');              colorbar;
+nexttile; imshow(single(out.final.R2s_hat(:,:,sliceIdx)).* single(mask(:,:,sliceIdx))); title('R2s\_hat Fitted (s^{-1})'); colorbar;
+nexttile; imshow(single(out.final.dR2s_dalpha(:,:,sliceIdx)) .* single(mask(:,:,sliceIdx))); title('dR2s\_dalpha Fitted (s^{-1}/deg)'); colorbar;
+
 saveas(gcf, '/home/rmapkdy/Scratch/output/gacelle_test_invivo_GM.png')

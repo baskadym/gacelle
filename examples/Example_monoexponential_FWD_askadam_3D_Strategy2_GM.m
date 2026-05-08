@@ -20,10 +20,7 @@
 %   The signal model is:
 %       S = S0 .* exp( -t .* (R2s_hat + dR2s_dalpha .* alpha) )
 %
-% Kwok-Shing Chan @ MGH
-% kchan2@mgh.harvard.edu
-% Date created: 28 April 2025
-% Date last modified:
+% Barbara Dymerska @UCL FIL
 %
 function S = Example_monoexponential_FWD_askadam_3D_Strategy2_GM( pars, t, alpha, mask)
 
