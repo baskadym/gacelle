@@ -115,8 +115,9 @@ out = askadam_obj.optimisation(y, mask, weights, pars0, fitting, modelFWD, t, al
 %% Display results
 % Choose a representative slice for 2-D display
 sliceIdx = round(Nz / 2);
+nDisplayMaps = size(pars0.S0, 4) + 2;
 
-figure; tiledlayout(1,Nscans+2);
+figure; tiledlayout(1,nDisplayMaps);
 for s = 1:Nscans
     nexttile;
     imshow(out.final.S0(:,:,sliceIdx,s) .* mask(:,:,sliceIdx));

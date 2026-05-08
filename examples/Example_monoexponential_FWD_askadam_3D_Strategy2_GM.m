@@ -43,9 +43,12 @@ Nscans = max(scan_idx(:));
 assert(size(S0,4) == Nscans, 'pars.S0 must contain one map per scan.');
 
 % Forward signal with scan-specific S0 offsets and common decay parameters
-S = zeros([size(S0,1), size(S0,2), size(S0,3), numel(t)], 'like', S0);
+spatial_size = size(S0);
+spatial_size = spatial_size(1:3);
+scan_masks = arrayfun(@(s) reshape(scan_idx == s, 1, []), 1:Nscans, 'UniformOutput', false);
+S = zeros([spatial_size, numel(t)], 'like', S0);
 for s = 1:Nscans
-    is_scan_s = reshape(scan_idx == s, 1, []);
+    is_scan_s = scan_masks{s};
     S0_for_scan = S0(:,:,:,s);
     S(:,:,:,is_scan_s) = S0_for_scan .* exp( -t(:,:,:,is_scan_s) .* (R2s_hat + dR2s_dalpha .* alpha(:,:,:,is_scan_s)) );
 end
