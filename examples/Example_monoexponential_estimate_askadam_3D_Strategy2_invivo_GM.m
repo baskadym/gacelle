@@ -10,30 +10,29 @@ clear
 % Each scan may have a different number of echoes.
 % Edit the paths, echo times and flip angles below to match your data.
 
-% Flip angles in degrees (one per scan)
-alpha_values = [6, 9, 26, 31, 36, 42];
 
-% Echo times in seconds for each scan (one row / cell entry per scan)
-% Edit to match your acquisition; scans may have different numbers of echoes.
-% echo_times{1} = [2.3:2.38:14.2]*1e-3;   % scan 1 (alpha = 6 deg)
-% echo_times{2} = [2.3:2.38:14.2]*1e-3;   % scan 2 (alpha = 9 deg)
-TE = [2.56:1.78:15.02]*1e-3;   
-echo_times = repmat({TE}, 1, 6);
+% Flip angles in degrees — one per entry in data_dirs (same order).
+alpha_values = [6 9 12 15 19 26 31 36 42];
+Nscans = numel(alpha_values);
 
+% Echo times (TE) in seconds — identical across all flip-angle acquisitions.
+TE = (2.56:1.78:15.02)*1e-3 ;  
+echo_times = repmat({TE}, 1, Nscans);
 
 
 % Directories containing NIfTI echo files for each scan
 scan_dirs{1} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_6deg_180us_0012';
 scan_dirs{2} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_9deg_180us_0011';
-scan_dirs{3} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_26deg_180us_0007';
-scan_dirs{4} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_31deg_180us_0006';
-scan_dirs{5} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_36deg_180us_0004';
-scan_dirs{6} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_42deg_180us_0005';
+scan_dirs{3} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_12deg_180us_0010';
+scan_dirs{4} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_15deg_180us_0009';
+scan_dirs{5} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_19deg_180us_0008';
+scan_dirs{6} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_26deg_180us_0007';
+scan_dirs{7} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_31deg_180us_0006';
+scan_dirs{8} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_36deg_180us_0004';
+scan_dirs{9} = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/t1w_mfc_3dflash_v3i_42deg_180us_0005';
 mask_file = '/myriadfs/home/rmapkdy/Scratch/input/20210217.MP03078_FIL/mask.nii';
 
 %% Validate inputs
-Nscans = numel(alpha_values);
-assert(numel(echo_times) == Nscans, 'echo_times must have one entry per flip angle.');
 assert(numel(scan_dirs)  == Nscans, 'scan_dirs must have one entry per flip angle.');
 
 echoFiles = cell(1, Nscans);
@@ -89,14 +88,6 @@ end
 ratio   = y1(:,:,:,end) ./ max(y1(:,:,:,1), eps('single'));
 dt      = echo_times{1}(end) - echo_times{1}(1);
 R2s_hat_init  = max(-log(max(ratio, eps('single'))) / dt, 0);
-
-%%%%% other initialization:
-    % coeffs = polyfit(echo_times{1}, log(y1), 1);
-    % 
-    % R2init = -coeffs(1);
-    % Soinit = coeffs(2);
-%%%%%%%
-
 
 pars0.S0          = double(S0init);
 pars0.R2s_hat     = double(R2s_hat_init);
